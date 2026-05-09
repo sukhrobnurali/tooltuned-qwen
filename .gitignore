@@ -1,3 +1,47 @@
-__pycache__/
-.venv/
+# env / secrets
 .env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# venv / package mgmt
+.venv/
+venv/
+env/
+
+# tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+
+# notebooks
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# training / eval artefacts
+wandb/
+outputs/
+checkpoints/
+results/*/raw/
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
