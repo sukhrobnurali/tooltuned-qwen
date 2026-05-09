@@ -18,12 +18,12 @@ Pin the following floor versions for v1.0. Lockfile (`uv.lock`) is the source of
 | `unsloth` | `>=2026.2.1` | First Unsloth release with documented `transformers>=5` support (off by default — must be opted-in). |
 | `unsloth_zoo` | `>=2026.2.1` | Tracks `unsloth` in lockstep; Unsloth's own update command keeps both pinned together. |
 | `transformers` | `>=5.1.0,<6` | 5.1.0 is the validated pair with `trl==0.27.1` ("supports >80% of Unsloth's 120 notebooks" per Unsloth issue tracker). 5.0 has known regressions in `Trainer.training_step`. |
-| `trl` | `>=0.27.1,<0.28` | Pair with transformers 5.1; `SFTTrainer` API stable in 0.27.x. Earlier 0.24.x line is transformers-v4 only. |
+| `trl` | `>=0.20,<0.25` | Floor matches the lower edge of `unsloth>=2026.2.1`'s supported range; `<0.25` matches its upper cap. The original `>=0.27.1,<0.28` row turned out to be unsatisfiable against any released `unsloth` (see Amendment 2026-05-10 #2). `SFTTrainer` API still stable in this band. |
 | `peft` | `>=0.18,<0.20` | LoRA API stable; 0.18+ supports transformers v5 adapter hooks. |
 | `bitsandbytes` | `>=0.48` | Required by `adamw_8bit` optimizer (still used despite bf16 LoRA per Unsloth recipe). 4-bit quant path unused, but bnb is still the optimizer host. |
 | `accelerate` | `>=1.5,<2` | Stable launcher; transformers v5 minimum. |
 | `datasets` | `>=3.5,<4` | xLAM and Hermes both load on the 3.x line. |
-| `huggingface_hub` | `>=0.30,<0.40` | `ModelCard`, `upload_folder`, snapshot APIs stable. |
+| `huggingface_hub` | `>=1.3,<2` | Forced floor by `transformers>=5.1` (sub-5.4 needs `>=1.3`, 5.4+ needs `>=1.5`). Provisional `>=0.30,<0.40` would not resolve — see Amendment 2026-05-10. `ModelCard`, `upload_folder`, snapshot APIs stable on the 1.x line. |
 | `torch` | `>=2.6,<2.8` | Last-known-good with Unsloth Triton kernels on L4 (CUDA 12.x). |
 | `wandb` | `>=0.18` | Stable run-logging API; nothing exotic needed. |
 | `pydantic` | `>=2.8,<3` | Plan Phase 0.6 config schema. |
@@ -74,3 +74,27 @@ Dev/CI deps (separate `[dev]` extra):
 - Unsloth release notes — `2026.2.x` series
 - Brief: [03_tooltuned_qwen_brief.md](../../03_tooltuned_qwen_brief.md) — §9, §11 q2
 - Plan: [read-the-project-description-cached-lightning.md](../../../../Users/User/.claude/plans/read-the-project-description-cached-lightning.md) — Phase 0.2, Phase 0.4
+
+## Amendment 2026-05-10 (Phase 0.4 / S2)
+
+Caught at first `uv sync --extra dev`: the `huggingface_hub` floor `>=0.30,<0.40` is incompatible with the `transformers>=5.1.0` floor. uv's resolver reported:
+
+- `transformers` in `[5.1.0, 5.3.0]` requires `huggingface_hub>=1.3.0`.
+- `transformers` in `[5.4.0+]` requires `huggingface_hub>=1.5.0`.
+
+Both ranges sit above the original `<0.40` ceiling — the v0.x line shipped `ModelCard` years ago, but transformers v5 picked up enough of the new hub APIs that the `0.x` shim was retired. We did not catch this in 0.2 because we read Unsloth's compat matrix and not transformers' own.
+
+**Resolution:** widen to `huggingface_hub>=1.3,<2`. Public APIs we use (`ModelCard`, `upload_folder`, `snapshot_download`) all carry forward through the 1.x major. Pin updated in `pyproject.toml` and the table above.
+
+No other pin moved. The lockfile generated at the end of S2 is the new acceptance baseline; if a smoke test in S3 surfaces a second forced floor, ADR amendment #2 will follow.
+
+## Amendment 2026-05-10 #2 (Phase 0.4 / S2)
+
+Caught at the *next* `uv sync --extra dev` after Amendment #1: every released `unsloth` (up through `2026.5.2`) pins `trl` to one of `>=0.18.2,<0.19` or `>0.19,<=0.24`. The original `trl>=0.27.1,<0.28` floor was therefore unsatisfiable against *any* version of unsloth, not just a specific one — the rationale ("0.27 is the validated pair with transformers 5.1") was traced to the wrong source (an unsloth issue thread describing a future intent, not a shipped support contract). Since the brief's hard constraint is "use Unsloth as-is" (§3 non-goal: not a new training framework), unsloth's pin envelope is what we have to live with.
+
+**Resolution:**
+- Widen `trl` to `>=0.20,<0.25`. Newest unsloth picks the top of that range; older unslothes pick lower.
+- Keep `transformers>=5.1.0,<6`. trl 0.24 was originally written for transformers v4, but the empirical pair (transformers 5.x + trl 0.24 + unsloth 2026.5.x) is what unsloth ships against; **S3 smoke is the acceptance gate** for whether `SFTTrainer` actually runs end-to-end on this stack. If it doesn't, the next amendment will either (a) drop transformers to `<5` (which contradicts unsloth's "transformers v5 required" doc for Qwen 3.5 — would force a base-model rethink) or (b) wait for a newer unsloth release.
+- Add `[tool.uv].conflicts` between extras `colab` and `dev` so resolution remains separable and CI doesn't have to satisfy the GPU stack.
+
+The lesson: pin from *the resolver's perspective* (what installs cleanly together right now), not from advertised compat-matrix prose. Amendments #1 and #2 cost ~15 min total — cheap because we caught both at first sync, before any code touched these libraries.
