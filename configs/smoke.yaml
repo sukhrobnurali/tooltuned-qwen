@@ -1,0 +1,41 @@
+# Smoke config -- exercises the full pipeline on 8 samples for 1 step.
+# Used by notebooks/colab_train.ipynb for the Phase 1.3 sanity run on Colab L4.
+# Numbers here are deliberately tiny; defaults belong in default.yaml.
+run_name: tooltuned-qwen-smoke
+base_model: Qwen/Qwen3.5-4B
+seed: 42
+
+data:
+  sources:
+    - xlam
+  max_samples: 8
+  val_frac: 0.0
+  holdout_frac: 0.0
+
+max_seq_len: 1024
+packing: false
+
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.0
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+
+optimizer:
+  name: adamw_8bit
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.0
+  weight_decay: 0.0
+
+batch_size: 1
+grad_accum_steps: 1
+epochs: null
+max_steps: 1
+
+thinking_mode: preserve
+
+output_dir: outputs
