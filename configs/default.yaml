@@ -1,0 +1,40 @@
+# Default training config — provisional defaults until Phase 2 ablations land.
+# Empirical decisions (dataset choice, thinking-mode) overwrite these in S4.
+run_name: tooltuned-qwen-default
+base_model: Qwen/Qwen3.5-4B
+seed: 42
+
+data:
+  sources:
+    - xlam
+  max_samples: null
+  val_frac: 0.05
+  holdout_frac: 0.05
+
+max_seq_len: 2048
+packing: true
+
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.0
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+
+optimizer:
+  name: adamw_8bit
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+
+batch_size: 4
+grad_accum_steps: 4
+epochs: 1
+max_steps: null
+
+thinking_mode: preserve
+
+output_dir: outputs
