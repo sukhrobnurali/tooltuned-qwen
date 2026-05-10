@@ -84,8 +84,9 @@ def test_xlam_to_messages_shape(xlam_sample: dict[str, Any]) -> None:
     assert messages[1]["role"] == "assistant"
     tool_calls = messages[1]["tool_calls"]
     assert tool_calls[0]["function"]["name"] == "get_weather"
-    # Arguments must be a JSON string (HF tool-call convention).
-    assert json.loads(tool_calls[0]["function"]["arguments"]) == {"city": "Tokyo"}
+    # Qwen 3.5's chat template expects arguments as a dict (it calls .items()),
+    # not the OpenAI-style JSON string -- see format.py for the empirical finding.
+    assert tool_calls[0]["function"]["arguments"] == {"city": "Tokyo"}
     assert tools[0]["name"] == "get_weather"
 
 

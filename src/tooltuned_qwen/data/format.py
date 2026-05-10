@@ -26,8 +26,10 @@ def _xlam_to_messages(
     tool_calls: list[dict[str, Any]] = []
     for ans in answers:
         args = ans.get("arguments", {})
-        if not isinstance(args, str):
-            args = json.dumps(args)
+        # Qwen 3.5's chat template iterates `arguments` as a mapping (calls .items()),
+        # so keep it parsed -- the OpenAI-style JSON-string form blows up `do_items`.
+        if isinstance(args, str):
+            args = json.loads(args)
         tool_calls.append(
             {
                 "type": "function",
