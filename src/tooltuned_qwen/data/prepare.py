@@ -10,20 +10,23 @@ import json
 from typing import Any
 
 
-def smoke_dataset(n: int = 8, *, source: str = "synthetic") -> Any:
-    """Tiny xlam-shaped slice for the Phase 1.3 end-to-end smoke run.
+def smoke_dataset(n: int = 8, *, source: str = "xlam") -> Any:
+    """Tiny xlam slice for the Phase 1.3 end-to-end smoke run.
 
-    Defaults to a self-contained synthetic slice so the smoke gate doesn't
-    block on per-user HF dataset access (xLAM is gated behind a one-click
-    Salesforce form). xLAM access is still required for the Phase 2 dataset
-    ablation -- pass `source="xlam"` once you have it.
+    Real xLAM is the default -- it exercises the actual HF auth + dataset
+    load path the main run will use. xLAM is gated, so reproducers need to
+    accept the dataset's terms once on https://huggingface.co/datasets/Salesforce/xlam-function-calling-60k
+    and have an `HF_TOKEN` exposed to the runtime.
+
+    Pass `source="synthetic"` for a self-contained slice (no HF access
+    needed) -- handy when only the pipeline plumbing is in question.
     """
-    if source == "synthetic":
-        return _synthetic_xlam(n)
     if source == "xlam":
         from .load_xlam import load_xlam
 
         return load_xlam().select(range(n))
+    if source == "synthetic":
+        return _synthetic_xlam(n)
     if source == "hermes":
         from .load_hermes import load_hermes
 
