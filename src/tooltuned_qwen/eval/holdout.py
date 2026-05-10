@@ -7,7 +7,7 @@ in eval/bfcl_runner.py (Phase 4).
 
 from __future__ import annotations
 
-from pathlib import Path
+import os
 from typing import Any
 
 DEFAULT_PROMPT = "What's the weather in Tokyo? Use the available tools."
@@ -16,33 +16,48 @@ DEFAULT_PROMPT = "What's the weather in Tokyo? Use the available tools."
 def quick_eval(
     adapter_path: str, *, prompt: str = DEFAULT_PROMPT, max_new_tokens: int = 64
 ) -> dict[str, Any]:
-    """Load `adapter_path` on the base it was trained from, generate once, return the output.
+    """Load the adapter, generate once, return the output.
 
     Smoke-only. Fails loud if generation is empty -- the whole point of
     Phase 1.3 is to catch a silent template/loading break before real training.
     """
+    import unsloth  # noqa: F401  load before transformers/peft per Unsloth's load-order docs.
     from unsloth import FastLanguageModel
 
-    base_model = _read_base_model(adapter_path)
+    # Single-GPU L4: Accelerate's device-map guard would still fire here even
+    # though we're not using a Trainer. Matches the bypass set in train.py.
+    os.environ.setdefault("ACCELERATE_BYPASS_DEVICE_MAP", "true")
+
+    # Pass the adapter path directly -- Unsloth resolves the base model from
+    # adapter_config.json and applies LoRA weights in one shot. Avoids the
+    # layer-name prefix mismatch (`model.layers.*` vs `model.language_model.layers.*`)
+    # we hit when calling `load_adapter` separately on Qwen 3.5's
+    # ConditionalGeneration architecture.
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=base_model,
+        model_name=adapter_path,
         max_seq_length=1024,
         load_in_4bit=False,
         dtype=None,
     )
-    model.load_adapter(adapter_path, adapter_name="default")
     FastLanguageModel.for_inference(model)
 
-    inputs = tokenizer.apply_chat_template(
+    # Qwen 3.5 ships as a multimodal Processor; its `tokenize=True` path
+    # iterates content as a list of typed parts and barfs on plain strings.
+    # Render to text first, then tokenize -- same path SFTTrainer used at train.
+    text = tokenizer.apply_chat_template(
         [{"role": "user", "content": prompt}],
-        tokenize=True,
+        tokenize=False,
         add_generation_prompt=True,
-        return_tensors="pt",
-    ).to(model.device)
+    )
+    text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+    inputs = text_tokenizer(text, return_tensors="pt").to(model.device)
 
-    output_ids = model.generate(inputs, max_new_tokens=max_new_tokens, do_sample=False)
-    completion = tokenizer.decode(
-        output_ids[0][inputs.shape[-1] :], skip_special_tokens=True
+    output_ids = model.generate(
+        **inputs, max_new_tokens=max_new_tokens, do_sample=False
+    )
+    input_len = inputs["input_ids"].shape[-1]
+    completion = text_tokenizer.decode(
+        output_ids[0][input_len:], skip_special_tokens=True
     )
 
     if not completion.strip():
@@ -51,15 +66,3 @@ def quick_eval(
             "smoke run failed -- inspect tokenizer / chat template / training step."
         )
     return {"prompt": prompt, "completion": completion}
-
-
-def _read_base_model(adapter_path: str) -> str:
-    """Recover the base model name from the adapter's PEFT config."""
-    import json
-
-    cfg_path = Path(adapter_path) / "adapter_config.json"
-    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-    base = cfg.get("base_model_name_or_path")
-    if not base:
-        raise RuntimeError(f"adapter_config.json at {cfg_path} has no base_model_name_or_path")
-    return base
