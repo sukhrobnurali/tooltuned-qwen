@@ -10,7 +10,9 @@ import json
 from typing import Any
 
 
-def smoke_dataset(n: int = 8, *, source: str = "synthetic") -> Any:
+def smoke_dataset(
+    n: int = 8, *, source: str = "synthetic", token: str | None = None
+) -> Any:
     """Tiny xlam-shaped slice for the Phase 1.3 end-to-end smoke run.
 
     Defaults to a self-contained synthetic slice so the notebook runs end-
@@ -21,19 +23,20 @@ def smoke_dataset(n: int = 8, *, source: str = "synthetic") -> Any:
 
     Pass `source="xlam"` for real Salesforce/xlam-function-calling-60k --
     requires an `HF_TOKEN` exposed to the runtime and accepted access to
-    that gated dataset. Phase 2 dataset ablations use the real data via
-    their `configs/ablation_dataset_*.yaml` configs, not this helper.
+    that gated dataset. `token` is forwarded to the loader; defaults to
+    `HF_TOKEN` from the env. Phase 2 dataset ablations use the real data
+    via their `configs/ablation_dataset_*.yaml` configs, not this helper.
     """
     if source == "synthetic":
         return _synthetic_xlam(n)
     if source == "xlam":
         from .load_xlam import load_xlam
 
-        return load_xlam().select(range(n))
+        return load_xlam(token=token).select(range(n))
     if source == "hermes":
         from .load_hermes import load_hermes
 
-        return load_hermes().select(range(n))
+        return load_hermes(token=token).select(range(n))
     raise ValueError(f"unknown smoke source: {source}")
 
 
