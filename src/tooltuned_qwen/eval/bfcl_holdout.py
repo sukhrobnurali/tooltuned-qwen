@@ -186,7 +186,7 @@ def run_bfcl_holdout(
     adapter_path: str,
     *,
     n: int = 50,
-    max_new_tokens: int = 256,
+    max_new_tokens: int = 768,
     cache_dir: str | Path = "results/bfcl_holdout",
 ) -> dict[str, Any]:
     """Load the adapter, run on `n` BFCL simple items, return per-item + summary.
@@ -195,6 +195,12 @@ def run_bfcl_holdout(
     Mirrors the Unsloth load pattern from `eval/holdout.py::quick_eval`:
     pass the adapter path to `from_pretrained` so layer-name reconciliation
     happens in one shot (Phase 1.3 finding).
+
+    `max_new_tokens` defaults to 768: Qwen 3.5 reasons before emitting
+    `<tool_call>`, and 256 was getting cut off mid-thought ("Let me call
+    the function with ... <" was a typical truncation point during
+    diagnosis). 768 gives ~150 tokens of reasoning headroom plus the
+    tool-call block.
     """
     # Dynamo config has to land BEFORE Unsloth loads its pre-compiled
     # `unsloth_compiled_module_qwen3_5.py` -- that module is built with
