@@ -21,6 +21,7 @@ def train(*, config_path: str, dataset: Any | None = None) -> str:
 
 
 def _run(cfg: TrainingConfig, *, dataset: Any | None) -> str:
+    import unsloth  # noqa: F401  Unsloth must load before trl/transformers per its load-order docs.
     from trl import SFTConfig, SFTTrainer
     from unsloth import FastLanguageModel
 
