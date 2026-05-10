@@ -10,23 +10,26 @@ import json
 from typing import Any
 
 
-def smoke_dataset(n: int = 8, *, source: str = "xlam") -> Any:
-    """Tiny xlam slice for the Phase 1.3 end-to-end smoke run.
+def smoke_dataset(n: int = 8, *, source: str = "synthetic") -> Any:
+    """Tiny xlam-shaped slice for the Phase 1.3 end-to-end smoke run.
 
-    Real xLAM is the default -- it exercises the actual HF auth + dataset
-    load path the main run will use. xLAM is gated, so reproducers need to
-    accept the dataset's terms once on https://huggingface.co/datasets/Salesforce/xlam-function-calling-60k
-    and have an `HF_TOKEN` exposed to the runtime.
+    Defaults to a self-contained synthetic slice so the notebook runs end-
+    to-end on a fresh Colab without any HF auth setup in cells 1-4. The
+    plumbing path (chat template, formatter, training, save, loadback) is
+    identical for synthetic and real xLAM rows -- both have the same
+    `query`/`tools`/`answers` schema.
 
-    Pass `source="synthetic"` for a self-contained slice (no HF access
-    needed) -- handy when only the pipeline plumbing is in question.
+    Pass `source="xlam"` for real Salesforce/xlam-function-calling-60k --
+    requires an `HF_TOKEN` exposed to the runtime and accepted access to
+    that gated dataset. Phase 2 dataset ablations use the real data via
+    their `configs/ablation_dataset_*.yaml` configs, not this helper.
     """
+    if source == "synthetic":
+        return _synthetic_xlam(n)
     if source == "xlam":
         from .load_xlam import load_xlam
 
         return load_xlam().select(range(n))
-    if source == "synthetic":
-        return _synthetic_xlam(n)
     if source == "hermes":
         from .load_hermes import load_hermes
 
