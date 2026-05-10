@@ -252,15 +252,17 @@ def run_bfcl_holdout(
     # Dynamo config has to land BEFORE Unsloth loads its pre-compiled
     # `unsloth_compiled_module_qwen3_5.py` -- that module is built with
     # one_graph=True, so any shape miss after load raises FailOnRecompileLimitHit.
-    # The relevant knob is `accumulated_cache_size_limit` (sum across all
-    # tracked frames), not the per-function `cache_size_limit`. Bump it
-    # generously and flip suppress_errors so an overflow falls back to eager
-    # instead of crashing the whole run.
+    # Even with cache bumps, the BFCL loop overflows around item 40 (different
+    # shapes per item). The reliable answer is to flip dynamo off entirely:
+    # the OptimizedModule wrapper checks `config.disable` at call time and
+    # falls through to the eager forward when set.
     import torch._dynamo
 
     torch._dynamo.config.cache_size_limit = 4096
     torch._dynamo.config.accumulated_cache_size_limit = 65536
     torch._dynamo.config.suppress_errors = True
+    torch._dynamo.config.disable = True
+    os.environ["TORCH_COMPILE_DISABLE"] = "1"
 
     import unsloth  # noqa: F401  load before transformers/peft (Unsloth load-order docs).
     from unsloth import FastLanguageModel
@@ -287,25 +289,38 @@ def run_bfcl_holdout(
     per_item: list[dict[str, Any]] = []
     correct = 0
     total = len(items)
+    crashed_at: int | None = None
+    crash_reason: str | None = None
     for i, item in enumerate(items, start=1):
-        # BFCL `question` is `[[{"role": "user", "content": ...}, ...]]` -- one
-        # nested conversation. Take the inner list verbatim.
-        messages = item["question"][0]
-        tools = [_build_qwen_tool(fn) for fn in item["function"]]
-        prompt = tokenizer.apply_chat_template(
-            messages,
-            tools=tools,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        inputs = text_tokenizer(prompt, return_tensors="pt").to(model.device)
-        output_ids = model.generate(
-            **inputs, max_new_tokens=max_new_tokens, do_sample=False
-        )
-        completion = text_tokenizer.decode(
-            output_ids[0][inputs["input_ids"].shape[-1] :],
-            skip_special_tokens=True,
-        )
+        try:
+            # BFCL `question` is `[[{"role": "user", "content": ...}, ...]]` --
+            # one nested conversation. Take the inner list verbatim.
+            messages = item["question"][0]
+            tools = [_build_qwen_tool(fn) for fn in item["function"]]
+            prompt = tokenizer.apply_chat_template(
+                messages,
+                tools=tools,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            inputs = text_tokenizer(prompt, return_tensors="pt").to(model.device)
+            output_ids = model.generate(
+                **inputs, max_new_tokens=max_new_tokens, do_sample=False
+            )
+            completion = text_tokenizer.decode(
+                output_ids[0][inputs["input_ids"].shape[-1] :],
+                skip_special_tokens=True,
+            )
+        except Exception as exc:
+            # Catch dynamo recompile overflows or any other inference fault
+            # so a 90%-complete run still produces a usable accuracy number.
+            # The Phase 2 ablation is a comparative measurement; partial-N
+            # results stay informative as long as both arms see the same N.
+            crash_reason = f"{type(exc).__name__}: {exc}"
+            print(f"  ! crashed at item {i}: {crash_reason}", flush=True)
+            crashed_at = i
+            break
+
         predicted = parse_tool_call(completion)
         ok = score_prediction(predicted, item["ground_truth"])
         per_item.append(
@@ -341,10 +356,14 @@ def run_bfcl_holdout(
                 flush=True,
             )
 
-    accuracy = correct / len(items) if items else 0.0
+    n_done = len(per_item)
+    accuracy = correct / n_done if n_done else 0.0
     return {
         "adapter_path": adapter_path,
-        "n": len(items),
+        "n": n_done,
+        "n_planned": len(items),
+        "crashed_at": crashed_at,
+        "crash_reason": crash_reason,
         "correct": correct,
         "accuracy": accuracy,
         "per_item": per_item,
