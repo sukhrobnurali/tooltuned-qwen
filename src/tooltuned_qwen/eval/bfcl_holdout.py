@@ -36,24 +36,19 @@ _TOOL_CALL_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 # Bare-JSON fallback: post-fine-tune Qwen sometimes emits raw `{"name": ..., "arguments": ...}`
 # without the `<tool_call>` wrapper. Catch the first balanced JSON object.
 _BARE_JSON_RE = re.compile(r"\{[^{}]*?\"name\"[^{}]*?\"arguments\".*?\}\s*\}", re.DOTALL)
+# XML-tag form observed in our fine-tuned Qwen 3.5 4B output:
+# `<function=NAME>\n<parameter=K>\nV\n</parameter>\n...\n</function>`. This is
+# what the model actually emits after our LoRA on xLAM/Hermes -- not the JSON
+# payload form the Qwen template's official `<tool_call>` block specifies.
+_FUNCTION_TAG_RE = re.compile(r"<function=([^>]+)>(.*?)</function>", re.DOTALL)
+_PARAMETER_TAG_RE = re.compile(
+    r"<parameter=([^>]+)>\s*(.*?)\s*</parameter>", re.DOTALL
+)
 
 
-def parse_tool_call(text: str) -> dict[str, Any] | None:
-    """Pull a `{name, arguments}` dict out of a model completion.
-
-    Returns `None` if no tool call is recognisable -- that's a strict miss
-    for scoring purposes (the model failed to call a function at all).
-    """
-    m = _TOOL_CALL_RE.search(text)
-    if m:
-        candidate = m.group(1)
-    else:
-        bm = _BARE_JSON_RE.search(text)
-        if not bm:
-            return None
-        candidate = bm.group(0)
+def _try_parse_json_call(s: str) -> dict[str, Any] | None:
     try:
-        obj = json.loads(candidate)
+        obj = json.loads(s)
     except json.JSONDecodeError:
         return None
     if not isinstance(obj, dict) or "name" not in obj:
@@ -67,6 +62,58 @@ def parse_tool_call(text: str) -> dict[str, Any] | None:
     if not isinstance(args, dict):
         return None
     return {"name": obj["name"], "arguments": args}
+
+
+def _try_parse_xml_call(text: str) -> dict[str, Any] | None:
+    """Extract `<function=NAME>...<parameter=K>V</parameter>...</function>`.
+
+    Each parameter value is JSON-decoded if possible (so `10` becomes int,
+    `"units"` becomes string, `true` becomes bool); falls through to a raw
+    string for unquoted scalars like `units`. BFCL's per-arg acceptance is
+    string-coercive, so either form scores correctly downstream.
+    """
+    fn = _FUNCTION_TAG_RE.search(text)
+    if not fn:
+        return None
+    name = fn.group(1).strip()
+    body = fn.group(2)
+    arguments: dict[str, Any] = {}
+    for param in _PARAMETER_TAG_RE.finditer(body):
+        key = param.group(1).strip()
+        raw = param.group(2).strip()
+        try:
+            arguments[key] = json.loads(raw)
+        except json.JSONDecodeError:
+            arguments[key] = raw
+    return {"name": name, "arguments": arguments}
+
+
+def parse_tool_call(text: str) -> dict[str, Any] | None:
+    """Pull a `{name, arguments}` dict out of a model completion.
+
+    Tries three known emission shapes in order of fidelity to the Qwen 3.5
+    chat template:
+      1. JSON payload inside `<tool_call>...</tool_call>` (template default).
+      2. XML-tag form `<function=...>...<parameter=...>...</parameter></function>`
+         (what our fine-tune actually emits -- per Phase 2 diagnosis).
+      3. Bare JSON `{"name": ..., "arguments": ...}` without any wrapper.
+
+    Returns `None` if no shape recognises -- that's a strict miss for scoring.
+    """
+    m = _TOOL_CALL_RE.search(text)
+    if m:
+        parsed = _try_parse_json_call(m.group(1))
+        if parsed is not None:
+            return parsed
+
+    xml = _try_parse_xml_call(text)
+    if xml is not None:
+        return xml
+
+    bm = _BARE_JSON_RE.search(text)
+    if bm:
+        return _try_parse_json_call(bm.group(0))
+    return None
 
 
 def _values_equivalent(value: Any, accepted: list[Any]) -> bool:

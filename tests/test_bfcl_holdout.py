@@ -45,6 +45,52 @@ def test_parse_tool_call_returns_none_on_garbage() -> None:
     assert parse_tool_call("<tool_call>{bad json</tool_call>") is None
 
 
+def test_parse_tool_call_extracts_xml_tag_form() -> None:
+    """Our Qwen 3.5 4B fine-tune emits XML-tag tool calls
+    (`<function=NAME>...<parameter=K>V</parameter></function>`) rather than
+    the JSON-payload form the chat template's `<tool_call>` block expects.
+    Confirmed during the Phase 2 BFCL holdout run -- see ADR 0003."""
+    completion = (
+        "<tool_call>\n"
+        "<function=calculate_triangle_area>\n"
+        "<parameter=base>\n10\n</parameter>\n"
+        "<parameter=height>\n5\n</parameter>\n"
+        "<parameter=unit>\nunits\n</parameter>\n"
+        "</function>\n"
+        "</tool_call>"
+    )
+    parsed = parse_tool_call(completion)
+    assert parsed is not None
+    assert parsed["name"] == "calculate_triangle_area"
+    # Numeric values are JSON-decoded; unquoted strings stay as strings.
+    assert parsed["arguments"] == {"base": 10, "height": 5, "unit": "units"}
+
+
+def test_parse_tool_call_xml_form_without_tool_call_wrapper() -> None:
+    """Some completions skip the outer `<tool_call>` tag and emit the
+    `<function=...>...</function>` block directly -- still parseable."""
+    completion = (
+        "<function=math.factorial>\n"
+        "<parameter=number>\n5\n</parameter>\n"
+        "</function>"
+    )
+    parsed = parse_tool_call(completion)
+    assert parsed == {"name": "math.factorial", "arguments": {"number": 5}}
+
+
+def test_parse_tool_call_xml_form_handles_dotted_function_names() -> None:
+    completion = (
+        "<function=math.hypot>"
+        "<parameter=x>4</parameter>"
+        "<parameter=y>5</parameter>"
+        "</function>"
+    )
+    parsed = parse_tool_call(completion)
+    assert parsed is not None
+    assert parsed["name"] == "math.hypot"
+    assert parsed["arguments"] == {"x": 4, "y": 5}
+
+
 def test_score_prediction_exact_match() -> None:
     gt = [{"calculate_triangle_area": {"base": [10], "height": [5], "unit": ["units", ""]}}]
     pred = {
