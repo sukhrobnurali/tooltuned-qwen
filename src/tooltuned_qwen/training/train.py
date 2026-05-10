@@ -11,13 +11,26 @@ import os
 from pathlib import Path
 from typing import Any
 
-from ..data.format import Source, format_sample
+from ..data.format import Source, enable_thinking_for, format_sample
 from .config import TrainingConfig, load_config
 
 
-def train(*, config_path: str, dataset: Any | None = None) -> str:
-    """Run a fine-tune from a YAML config. Returns the saved adapter path."""
-    cfg = load_config(config_path)
+def train(
+    *,
+    config_path: str | None = None,
+    config: TrainingConfig | None = None,
+    dataset: Any | None = None,
+) -> str:
+    """Run a fine-tune. Returns the saved adapter path.
+
+    Pass exactly one of `config_path` (load from YAML) or `config` (an in-memory
+    TrainingConfig). The config-object form lets the Phase 2 ablation notebook
+    point a thinking-mode YAML at the dataset winner without writing a temp
+    file each run.
+    """
+    if (config_path is None) == (config is None):
+        raise ValueError("Pass exactly one of `config_path` or `config`.")
+    cfg = config if config is not None else load_config(config_path)  # type: ignore[arg-type]
     return _run(cfg, dataset=dataset)
 
 
@@ -120,8 +133,16 @@ def _ensure_text_column(dataset: Any, tokenizer: Any, cfg: TrainingConfig) -> An
     if "text" in dataset.column_names:
         return dataset
     source: Source = cfg.data.sources[0]
+    mode = cfg.thinking_mode
+    seed = cfg.seed
     keep = list(dataset.column_names)
-    return dataset.map(
-        lambda s: {"text": format_sample(s, tokenizer, source=source)},
-        remove_columns=keep,
-    )
+
+    def _render(sample: Any, idx: int) -> dict[str, str]:
+        et = enable_thinking_for(mode, index=idx, seed=seed)
+        return {
+            "text": format_sample(sample, tokenizer, source=source, enable_thinking=et)
+        }
+
+    # `with_indices=True` lets the mix-75-25 mode produce a deterministic
+    # 75/25 split keyed on (seed, position) rather than wall-clock RNG state.
+    return dataset.map(_render, with_indices=True, remove_columns=keep)
