@@ -223,25 +223,13 @@ def run_bfcl_holdout(
     )
     # Skip `FastLanguageModel.for_inference` -- it routes generation through
     # Unsloth's `unsloth_base_fast_generate` which sets `one_graph=True` on
-    # the pre-compiled Qwen 3.5 module. That's a single-shape fast path, but
-    # for our 50-item loop it either overflows the recompile counter (without
-    # padding) or hangs for many minutes during the first compile (with).
-    # Plain `eval()` mode keeps the standard transformers generate path,
-    # which is recompile-tolerant. Throughput is lower but the run completes.
+    # the pre-compiled Qwen 3.5 module, which overflows the recompile counter
+    # on a multi-shape loop. Standard `eval()` keeps the transformers generate
+    # path, which is recompile-tolerant; throughput is lower but predictions
+    # come out correct (the padded fast path was emitting empty completions
+    # because pad_token=eos_token biased greedy decode to halt immediately).
     model.eval()
     text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
-    # Pad on the LEFT so the prompt's last token sits next to the generation
-    # boundary -- right-padding would let the model attend to pad slots before
-    # producing real tokens. Force a `pad_token` if the tokenizer has none.
-    text_tokenizer.padding_side = "left"
-    if text_tokenizer.pad_token_id is None:
-        text_tokenizer.pad_token = text_tokenizer.eos_token
-
-    # Fixed prefill length collapses 50 distinct prompt shapes into one, which
-    # is the only reliable way around Unsloth's pre-compiled `one_graph=True`
-    # module: dynamo cache bumps help, but the per-function recompile counter
-    # still overflows on a 50-item slice with varying lengths.
-    prefill_len = 1024
 
     per_item: list[dict[str, Any]] = []
     correct = 0
@@ -257,20 +245,12 @@ def run_bfcl_holdout(
             tokenize=False,
             add_generation_prompt=True,
         )
-        inputs = text_tokenizer(
-            prompt,
-            return_tensors="pt",
-            padding="max_length",
-            max_length=prefill_len,
-            truncation=True,
-        ).to(model.device)
+        inputs = text_tokenizer(prompt, return_tensors="pt").to(model.device)
         output_ids = model.generate(
             **inputs, max_new_tokens=max_new_tokens, do_sample=False
         )
-        # Left-padded inputs all end at column `prefill_len`, so generated
-        # tokens start there regardless of how short the original prompt was.
         completion = text_tokenizer.decode(
-            output_ids[0][prefill_len:],
+            output_ids[0][inputs["input_ids"].shape[-1] :],
             skip_special_tokens=True,
         )
         predicted = parse_tool_call(completion)
@@ -295,6 +275,12 @@ def run_bfcl_holdout(
             f"running_acc={running_acc:.3f}",
             flush=True,
         )
+        # Show the raw completion when parsing misses on the first few items --
+        # if the model isn't emitting `<tool_call>` blocks at all we want to
+        # see the actual output to diagnose chat-template / decoding bugs.
+        if predicted is None and i <= 3:
+            preview = completion[:200].replace("\n", " | ")
+            print(f"          completion preview: {preview!r}", flush=True)
 
     accuracy = correct / len(items) if items else 0.0
     return {
