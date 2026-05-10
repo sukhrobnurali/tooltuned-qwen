@@ -196,10 +196,21 @@ def run_bfcl_holdout(
     pass the adapter path to `from_pretrained` so layer-name reconciliation
     happens in one shot (Phase 1.3 finding).
     """
+    import torch._dynamo
     import unsloth  # noqa: F401  load before transformers/peft (Unsloth load-order docs).
     from unsloth import FastLanguageModel
 
     os.environ.setdefault("ACCELERATE_BYPASS_DEVICE_MAP", "true")
+
+    # BFCL items vary in prompt shape (different tool counts / question
+    # lengths), and Unsloth's `for_inference` enables `one_graph=True`. Each
+    # unique shape is a fresh dynamo recompile; the default cache (64) blows
+    # up on a 50-item slice and raises FailOnRecompileLimitHit. Eager mode
+    # at this scale (~50 short generations) is plenty fast, so disable dynamo
+    # outright rather than pad-to-max for compile reuse.
+    torch._dynamo.config.cache_size_limit = 4096
+    torch._dynamo.config.suppress_errors = True
+    torch._dynamo.disable()
 
     items = load_bfcl_simple(n=n, cache_dir=cache_dir)
     model, tokenizer = FastLanguageModel.from_pretrained(
