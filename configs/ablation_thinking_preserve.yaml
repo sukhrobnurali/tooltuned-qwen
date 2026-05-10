@@ -1,0 +1,41 @@
+# Phase 2.2 thinking-mode ablation -- arm (a) reasoning preserved.
+# `data.sources` is set to xlam by default; if Phase 2.1 picks hermes,
+# update the source here (and in the strip / mix arms) before running.
+run_name: ablation-thinking-preserve
+base_model: Qwen/Qwen3.5-4B
+seed: 42
+
+data:
+  sources:
+    - xlam
+  max_samples: 1000
+  val_frac: 0.0
+  holdout_frac: 0.0
+
+max_seq_len: 2048
+packing: true
+
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.0
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+
+optimizer:
+  name: adamw_8bit
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+
+batch_size: 4
+grad_accum_steps: 4
+epochs: 1
+max_steps: null
+
+thinking_mode: preserve
+
+output_dir: outputs

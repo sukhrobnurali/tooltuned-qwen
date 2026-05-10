@@ -38,3 +38,29 @@ def test_epochs_xor_max_steps_required() -> None:
 def test_unknown_field_rejected() -> None:
     with pytest.raises(ValidationError):
         TrainingConfig(run_name="x", bogus_field=True)  # type: ignore[call-arg]
+
+
+def test_train_requires_exactly_one_config_argument() -> None:
+    """train() takes either a YAML path or a TrainingConfig, not both/neither.
+    Phase 2 ablations need the in-memory form to swap data.sources without
+    writing temp YAMLs; guard the contract so neither caller can pass nothing."""
+    from tooltuned_qwen.training.train import train
+
+    with pytest.raises(ValueError, match="exactly one"):
+        train()
+    with pytest.raises(ValueError, match="exactly one"):
+        train(config_path="x", config=TrainingConfig(run_name="x"))
+
+
+def test_ablation_yamls_load() -> None:
+    """All Phase 2 ablation YAMLs must validate; a typo here means a wasted
+    Colab run, so catch it in CI before the GPU spins."""
+    ablation_dir = REPO_ROOT / "configs"
+    yamls = sorted(ablation_dir.glob("ablation_*.yaml"))
+    assert len(yamls) == 5, f"expected 5 ablation YAMLs, found {len(yamls)}"
+    for path in yamls:
+        cfg = load_config(path)
+        assert cfg.lora.rank == 16
+        assert cfg.optimizer.learning_rate == pytest.approx(2e-4)
+        assert cfg.data.max_samples == 1000
+        assert cfg.epochs == 1
