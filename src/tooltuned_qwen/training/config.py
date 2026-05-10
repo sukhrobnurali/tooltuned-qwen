@@ -68,6 +68,11 @@ class TrainingConfig(BaseModel):
 
     output_dir: str = "outputs"
 
+    # When set, the trainer reports to W&B under this project name. Smoke and
+    # ablation YAMLs leave it null so their runs don't pollute the public
+    # dashboard; only `default.yaml` (the Phase 3 main run) flips it on.
+    wandb_project: str | None = None
+
     @model_validator(mode="after")
     def _exactly_one_of_epochs_or_max_steps(self) -> Self:
         if (self.epochs is None) == (self.max_steps is None):

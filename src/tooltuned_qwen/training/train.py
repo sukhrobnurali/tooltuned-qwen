@@ -44,6 +44,10 @@ def _run(cfg: TrainingConfig, *, dataset: Any | None) -> str:
     # Single-process single-GPU L4 path is fine -- bypass the check.
     os.environ.setdefault("ACCELERATE_BYPASS_DEVICE_MAP", "true")
 
+    if cfg.wandb_project is not None:
+        os.environ["WANDB_PROJECT"] = cfg.wandb_project
+        os.environ.setdefault("WANDB_RUN_NAME", cfg.run_name)
+
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=cfg.base_model,
         max_seq_length=cfg.max_seq_len,
@@ -80,7 +84,8 @@ def _run(cfg: TrainingConfig, *, dataset: Any | None) -> str:
         max_seq_length=cfg.max_seq_len,
         packing=cfg.packing,
         seed=cfg.seed,
-        report_to="none",
+        report_to="wandb" if cfg.wandb_project is not None else "none",
+        run_name=cfg.run_name,
         save_strategy="no",
         logging_steps=1,
         bf16=True,

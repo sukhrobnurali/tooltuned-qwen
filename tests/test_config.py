@@ -18,6 +18,21 @@ def test_default_yaml_loads() -> None:
     assert cfg.lora.rank == 16
     assert cfg.data.sources == ["xlam"]
     assert cfg.thinking_mode == "preserve"
+    # Phase 3 main-run knobs -- effective batch stays at 16 (bs * ga), but the
+    # bs=16/ga=1 form trades VRAM for fewer steps (faster on A100). xLAM is
+    # 60k rows; 10k is the first-attempt subset that fits the ~25-unit slice.
+    assert cfg.batch_size == 16
+    assert cfg.grad_accum_steps == 1
+    assert cfg.data.max_samples == 10000
+    assert cfg.wandb_project == "tooltuned-qwen"
+
+
+def test_smoke_and_ablation_yamls_leave_wandb_off() -> None:
+    """Only the main run reports to W&B. Ablation/smoke runs must not pollute
+    the public dashboard, so their YAMLs must leave wandb_project unset."""
+    for path in sorted(REPO_ROOT.glob("configs/ablation_*.yaml")):
+        assert load_config(path).wandb_project is None, path
+    assert load_config(REPO_ROOT / "configs" / "smoke.yaml").wandb_project is None
 
 
 def test_round_trip(tmp_path: Path) -> None:
