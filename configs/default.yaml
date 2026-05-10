@@ -1,6 +1,12 @@
-# Default training config -- Phase 2 ablations confirmed xlam + thinking=preserve
-# as the operating point. ADR 0003 (dataset) and ADR 0004 (thinking-mode) document
-# the empirical results; this file is the source of truth for Phase 3's main run.
+# Default training config -- the Phase 3 main run.
+# ADR 0003 (dataset = xlam) and ADR 0004 (thinking-mode = preserve) are baked in.
+# Phase 3 sizing notes:
+#   * max_samples=10000 -- first attempt fits comfortably under 25 A100 units.
+#     Bump to null (full 60k) only if budget allows after the 10k pass.
+#   * batch_size=16 / grad_accum=1 / max_seq_len=2048 -- A100 headroom (S4 used
+#     ~14 / 40 GB at bs=8/ga=2/seq=1024). Effective batch unchanged at 16.
+#   * wandb_project routes logging to the public dashboard at
+#     wandb.ai/sukhrobnurali/tooltuned-qwen.
 run_name: tooltuned-qwen-default
 base_model: Qwen/Qwen3.5-4B
 seed: 42
@@ -8,7 +14,7 @@ seed: 42
 data:
   sources:
     - xlam
-  max_samples: null
+  max_samples: 10000
   val_frac: 0.05
   holdout_frac: 0.05
 
@@ -31,11 +37,13 @@ optimizer:
   warmup_ratio: 0.03
   weight_decay: 0.0
 
-batch_size: 4
-grad_accum_steps: 4
+batch_size: 16
+grad_accum_steps: 1
 epochs: 1
 max_steps: null
 
 thinking_mode: preserve
+
+wandb_project: tooltuned-qwen
 
 output_dir: outputs
