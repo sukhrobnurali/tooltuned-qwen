@@ -67,6 +67,10 @@ def _run(cfg: TrainingConfig, *, dataset: Any | None) -> str:
         bf16=True,
         fp16=False,
         dataset_text_field="text",
+        # Single-process tokenization: Unsloth's monkey-patches make the
+        # tokenizer non-picklable, which breaks the default multiprocess
+        # `dataset.map` path inside SFTTrainer.
+        dataset_num_proc=1,
     )
 
     trainer = SFTTrainer(
