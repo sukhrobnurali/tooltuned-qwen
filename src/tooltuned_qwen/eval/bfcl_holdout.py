@@ -281,12 +281,18 @@ def run_bfcl_holdout(
             f"running_acc={running_acc:.3f}",
             flush=True,
         )
-        # Show the raw completion when parsing misses on the first few items --
-        # if the model isn't emitting `<tool_call>` blocks at all we want to
-        # see the actual output to diagnose chat-template / decoding bugs.
-        if predicted is None and i <= 3:
-            preview = completion[:200].replace("\n", " | ")
-            print(f"          completion preview: {preview!r}", flush=True)
+        # Show the head + tail + length of every missed completion. The tail
+        # is what matters: if it ends with `</tool_call>` the parser regex is
+        # the bug; if it ends mid-thought we're hitting `max_new_tokens`; if
+        # it ends in plain prose the trained model isn't using the tool-call
+        # format at all.
+        if predicted is None:
+            head = completion[:120].replace("\n", " | ")
+            tail = completion[-160:].replace("\n", " | ")
+            print(
+                f"          len={len(completion)} head={head!r} tail={tail!r}",
+                flush=True,
+            )
 
     accuracy = correct / len(items) if items else 0.0
     return {
