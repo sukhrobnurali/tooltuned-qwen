@@ -1,5 +1,6 @@
-# Default training config — provisional defaults until Phase 2 ablations land.
-# Empirical decisions (dataset choice, thinking-mode) overwrite these in S4.
+# Default training config -- Phase 2 ablations confirmed xlam + thinking=preserve
+# as the operating point. ADR 0003 (dataset) and ADR 0004 (thinking-mode) document
+# the empirical results; this file is the source of truth for Phase 3's main run.
 run_name: tooltuned-qwen-default
 base_model: Qwen/Qwen3.5-4B
 seed: 42
