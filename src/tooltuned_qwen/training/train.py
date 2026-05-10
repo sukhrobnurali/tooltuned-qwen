@@ -46,6 +46,8 @@ def _run(cfg: TrainingConfig, *, dataset: Any | None) -> str:
 
     if cfg.wandb_project is not None:
         os.environ["WANDB_PROJECT"] = cfg.wandb_project
+        if cfg.wandb_entity is not None:
+            os.environ["WANDB_ENTITY"] = cfg.wandb_entity
         os.environ.setdefault("WANDB_RUN_NAME", cfg.run_name)
 
     model, tokenizer = FastLanguageModel.from_pretrained(

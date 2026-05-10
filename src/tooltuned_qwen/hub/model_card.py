@@ -37,8 +37,16 @@ def generate_card(
 ) -> str:
     """Render the model card to `out_path` and return the absolute path."""
     cfg = load_config(training_config_path)
-    if wandb_dashboard is None and cfg.wandb_project is not None:
-        wandb_dashboard = f"https://wandb.ai/sukhrobnurali/{cfg.wandb_project}"
+    # Only emit the dashboard link when BOTH entity and project are set.
+    # Hardcoding the entity (which we did pre-S5-bugfix) shipped a broken URL
+    # whenever the run landed on the user's default W&B entity instead of
+    # the assumed one -- safer to omit the link than to ship a 404.
+    if (
+        wandb_dashboard is None
+        and cfg.wandb_project is not None
+        and cfg.wandb_entity is not None
+    ):
+        wandb_dashboard = f"https://wandb.ai/{cfg.wandb_entity}/{cfg.wandb_project}"
 
     body = _render(
         cfg=cfg,

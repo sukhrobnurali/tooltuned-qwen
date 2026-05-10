@@ -72,6 +72,13 @@ class TrainingConfig(BaseModel):
     # ablation YAMLs leave it null so their runs don't pollute the public
     # dashboard; only `default.yaml` (the Phase 3 main run) flips it on.
     wandb_project: str | None = None
+    # W&B entity (user or team). Pin explicitly -- omitting routes to the
+    # account's default entity, which silently lands the run on whatever team
+    # workspace W&B picked at signup (e.g. `sukhrob-production`) rather than
+    # the public personal entity. Model card emits the dashboard link only
+    # when both project AND entity are set, so a missing entity drops the
+    # link rather than shipping a broken URL.
+    wandb_entity: str | None = None
 
     @model_validator(mode="after")
     def _exactly_one_of_epochs_or_max_steps(self) -> Self:
