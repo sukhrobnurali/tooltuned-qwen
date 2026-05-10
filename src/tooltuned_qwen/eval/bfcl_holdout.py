@@ -196,21 +196,23 @@ def run_bfcl_holdout(
     pass the adapter path to `from_pretrained` so layer-name reconciliation
     happens in one shot (Phase 1.3 finding).
     """
+    # Dynamo config has to land BEFORE Unsloth loads its pre-compiled
+    # `unsloth_compiled_module_qwen3_5.py` -- that module is built with
+    # one_graph=True, so any shape miss after load raises FailOnRecompileLimitHit.
+    # The relevant knob is `accumulated_cache_size_limit` (sum across all
+    # tracked frames), not the per-function `cache_size_limit`. Bump it
+    # generously and flip suppress_errors so an overflow falls back to eager
+    # instead of crashing the whole run.
     import torch._dynamo
+
+    torch._dynamo.config.cache_size_limit = 4096
+    torch._dynamo.config.accumulated_cache_size_limit = 65536
+    torch._dynamo.config.suppress_errors = True
+
     import unsloth  # noqa: F401  load before transformers/peft (Unsloth load-order docs).
     from unsloth import FastLanguageModel
 
     os.environ.setdefault("ACCELERATE_BYPASS_DEVICE_MAP", "true")
-
-    # BFCL items vary in prompt shape (different tool counts / question
-    # lengths), and Unsloth's `for_inference` enables `one_graph=True`. Each
-    # unique shape is a fresh dynamo recompile; the default cache (64) blows
-    # up on a 50-item slice and raises FailOnRecompileLimitHit. Eager mode
-    # at this scale (~50 short generations) is plenty fast, so disable dynamo
-    # outright rather than pad-to-max for compile reuse.
-    torch._dynamo.config.cache_size_limit = 4096
-    torch._dynamo.config.suppress_errors = True
-    torch._dynamo.disable()
 
     items = load_bfcl_simple(n=n, cache_dir=cache_dir)
     model, tokenizer = FastLanguageModel.from_pretrained(
@@ -221,6 +223,18 @@ def run_bfcl_holdout(
     )
     FastLanguageModel.for_inference(model)
     text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+    # Pad on the LEFT so the prompt's last token sits next to the generation
+    # boundary -- right-padding would let the model attend to pad slots before
+    # producing real tokens. Force a `pad_token` if the tokenizer has none.
+    text_tokenizer.padding_side = "left"
+    if text_tokenizer.pad_token_id is None:
+        text_tokenizer.pad_token = text_tokenizer.eos_token
+
+    # Fixed prefill length collapses 50 distinct prompt shapes into one, which
+    # is the only reliable way around Unsloth's pre-compiled `one_graph=True`
+    # module: dynamo cache bumps help, but the per-function recompile counter
+    # still overflows on a 50-item slice with varying lengths.
+    prefill_len = 1024
 
     per_item: list[dict[str, Any]] = []
     correct = 0
@@ -235,12 +249,20 @@ def run_bfcl_holdout(
             tokenize=False,
             add_generation_prompt=True,
         )
-        inputs = text_tokenizer(prompt, return_tensors="pt").to(model.device)
+        inputs = text_tokenizer(
+            prompt,
+            return_tensors="pt",
+            padding="max_length",
+            max_length=prefill_len,
+            truncation=True,
+        ).to(model.device)
         output_ids = model.generate(
             **inputs, max_new_tokens=max_new_tokens, do_sample=False
         )
+        # Left-padded inputs all end at column `prefill_len`, so generated
+        # tokens start there regardless of how short the original prompt was.
         completion = text_tokenizer.decode(
-            output_ids[0][inputs["input_ids"].shape[-1] :],
+            output_ids[0][prefill_len:],
             skip_special_tokens=True,
         )
         predicted = parse_tool_call(completion)
