@@ -221,7 +221,14 @@ def run_bfcl_holdout(
         load_in_4bit=False,
         dtype=None,
     )
-    FastLanguageModel.for_inference(model)
+    # Skip `FastLanguageModel.for_inference` -- it routes generation through
+    # Unsloth's `unsloth_base_fast_generate` which sets `one_graph=True` on
+    # the pre-compiled Qwen 3.5 module. That's a single-shape fast path, but
+    # for our 50-item loop it either overflows the recompile counter (without
+    # padding) or hangs for many minutes during the first compile (with).
+    # Plain `eval()` mode keeps the standard transformers generate path,
+    # which is recompile-tolerant. Throughput is lower but the run completes.
+    model.eval()
     text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
     # Pad on the LEFT so the prompt's last token sits next to the generation
     # boundary -- right-padding would let the model attend to pad slots before
