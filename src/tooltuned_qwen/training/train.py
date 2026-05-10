@@ -7,6 +7,7 @@ isn't installed.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,11 @@ def _run(cfg: TrainingConfig, *, dataset: Any | None) -> str:
     import unsloth  # noqa: F401  Unsloth must load before trl/transformers per its load-order docs.
     from trl import SFTConfig, SFTTrainer
     from unsloth import FastLanguageModel
+
+    # Unsloth loads with `device_map='auto'`; Accelerate's `prepare()` then refuses
+    # to wrap it because it conservatively treats auto-mapped models as distributed.
+    # Single-process single-GPU L4 path is fine -- bypass the check.
+    os.environ.setdefault("ACCELERATE_BYPASS_DEVICE_MAP", "true")
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=cfg.base_model,
