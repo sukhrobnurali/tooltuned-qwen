@@ -45,11 +45,9 @@ max_steps: null
 thinking_mode: preserve
 
 wandb_project: tooltuned-qwen
-# Pin the W&B entity explicitly. If null, the run lands on the account's
-# default entity (which on the first Phase 3 run was `sukhrob-production`,
-# a private team workspace -- the model card link 404'd as a result).
-# Set to your *public* personal entity before any future run that wants a
-# public dashboard. Leave null to opt out of the dashboard link entirely.
-wandb_entity: null
+# Public W&B dashboard at wandb.ai/sukhrob-production/tooltuned-qwen
+# (team workspace, project flipped to Open visibility after the first
+# Phase 3 run). Leave null to opt out of the dashboard link entirely.
+wandb_entity: sukhrob-production
 
 output_dir: outputs

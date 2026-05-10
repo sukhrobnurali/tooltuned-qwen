@@ -25,10 +25,11 @@ def test_default_yaml_loads() -> None:
     assert cfg.grad_accum_steps == 1
     assert cfg.data.max_samples == 10000
     assert cfg.wandb_project == "tooltuned-qwen"
-    # Entity stays null until the user picks a *public* W&B entity to pin.
+    # Pinned to the public team workspace where the Phase 3 run lives.
     # Shipping with a hardcoded entity is what produced the broken-link bug
-    # in the S5 Phase 3 run -- null means the model card omits the link.
-    assert cfg.wandb_entity is None
+    # in the first Phase 3 push; the field is now explicit + tested so a
+    # rename (or a flip back to private) trips the test.
+    assert cfg.wandb_entity == "sukhrob-production"
 
 
 def test_smoke_and_ablation_yamls_leave_wandb_off() -> None:

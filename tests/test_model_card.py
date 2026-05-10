@@ -45,9 +45,9 @@ def test_card_renders_with_bfcl_tbd(tmp_path: Path) -> None:
     assert "license: apache-2.0" in body  # frontmatter
     assert "base_model: Qwen/Qwen3.5-4B" in body
     assert "Sukhrob Nurali" in body
-    # default.yaml has wandb_project set but wandb_entity null -- the card
-    # must NOT emit a dashboard link in that state (would otherwise 404).
-    assert "wandb.ai" not in body
+    # default.yaml pins the public W&B team workspace; the card must
+    # surface the dashboard link so reviewers can audit training curves.
+    assert "https://wandb.ai/sukhrob-production/tooltuned-qwen" in body
 
 
 def test_card_renders_with_bfcl_results(tmp_path: Path) -> None:
