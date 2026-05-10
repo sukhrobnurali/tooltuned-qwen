@@ -238,7 +238,8 @@ def run_bfcl_holdout(
 
     per_item: list[dict[str, Any]] = []
     correct = 0
-    for item in items:
+    total = len(items)
+    for i, item in enumerate(items, start=1):
         # BFCL `question` is `[[{"role": "user", "content": ...}, ...]]` -- one
         # nested conversation. Take the inner list verbatim.
         messages = item["question"][0]
@@ -277,6 +278,16 @@ def run_bfcl_holdout(
         )
         if ok:
             correct += 1
+        # Per-item progress -- without it, eager-mode generation looks like a
+        # hung kernel for 5-10 minutes on a 50-item slice. `flush=True` so the
+        # output appears in Colab in real time, not buffered until the loop ends.
+        running_acc = correct / i
+        print(
+            f"[{i:>2d}/{total}] {item['id']:<10s} {'OK' if ok else '..'} "
+            f"pred={predicted['name'] if predicted else None}  "
+            f"running_acc={running_acc:.3f}",
+            flush=True,
+        )
 
     accuracy = correct / len(items) if items else 0.0
     return {
