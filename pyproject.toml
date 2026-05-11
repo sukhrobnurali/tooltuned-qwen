@@ -43,6 +43,10 @@ dev = [
     "pytest>=8",
     "ruff>=0.7",
     "pyright>=1.1.380",
+    # Phase 4.3 comparison artifacts -- the bar chart embedded in the model
+    # card (brief 11 q13) renders locally from saved BFCL results. Colab
+    # pre-installs matplotlib by default so the `[colab]` extra doesn't need it.
+    "matplotlib>=3.8",
 ]
 
 [project.urls]
