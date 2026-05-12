@@ -12,6 +12,7 @@ a fixture score directory built on `tmp_path`.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ from tooltuned_qwen.eval.bfcl_runner import (
     _collect_per_category,
     _parse_score_summary,
     _resolve_model_name,
+    _venv_subprocess_env,
     run_bfcl,
 )
 
@@ -159,6 +161,38 @@ def test_build_evaluate_cmd_honors_custom_executable() -> None:
     )
     assert cmd[0] == "/content/bfcl-venv/bin/bfcl"
     assert cmd[1] == "evaluate"
+
+
+def test_venv_subprocess_env_prepends_executable_dir_to_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bfcl generates with `--backend vllm` shells out to `vllm serve ...`
+    by name -- if PATH doesn't include the venv's bin, the inner Popen
+    raises `FileNotFoundError: vllm`. The wrapper must inject the venv
+    bin dir into PATH for every subprocess it spawns. Uses tmp_path so the
+    assertion stays platform-agnostic (Path.resolve() normalises slash
+    style differently on Linux vs Windows)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    bfcl = bin_dir / "bfcl"
+    bfcl.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    env = _venv_subprocess_env(str(bfcl))
+    assert env["PATH"].startswith(str(bin_dir) + os.pathsep)
+    assert "/usr/bin" in env["PATH"]
+
+
+def test_venv_subprocess_env_leaves_bare_executable_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the caller passes a bare `bfcl` (PATH-resolvable), we trust
+    the parent env. Critically: we must NOT graft cwd onto PATH, which
+    would happen if we naively `Path('bfcl').resolve().parent` -- that
+    silently shadows system binaries with whatever happens to be in pwd."""
+    original = "/usr/local/bin" + os.pathsep + "/usr/bin"
+    monkeypatch.setenv("PATH", original)
+    env = _venv_subprocess_env("bfcl")
+    assert env["PATH"] == original
 
 
 def test_parse_score_summary_reads_first_jsonl_line(tmp_path: Path) -> None:

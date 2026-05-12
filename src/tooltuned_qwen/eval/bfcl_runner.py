@@ -21,6 +21,7 @@ base name and just say `mode="fc"`.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from datetime import date
 from pathlib import Path
@@ -107,6 +108,27 @@ def _build_generate_cmd(
     if extra_args:
         cmd += list(extra_args)
     return cmd
+
+
+def _venv_subprocess_env(bfcl_executable: str) -> dict[str, str]:
+    """Build subprocess env so bfcl can find its sibling binaries on PATH.
+
+    `bfcl generate --backend vllm` shells out to `vllm serve ...` via a bare
+    `subprocess.Popen(["vllm", ...])` -- PATH-lookup, not absolute path. When
+    we invoke bfcl from an isolated venv at `/content/bfcl-venv/bin/bfcl`,
+    `vllm` lives next door at `/content/bfcl-venv/bin/vllm` but isn't on the
+    parent kernel's PATH, so the inner Popen raises `FileNotFoundError: vllm`.
+    Prepend the venv's bin dir to PATH so the inner Popen finds it.
+
+    Only prepends when the caller passed a path (has a directory component);
+    bare `"bfcl"` leaves PATH alone so we don't accidentally shadow system
+    binaries with whatever happens to be in cwd.
+    """
+    env = os.environ.copy()
+    if os.path.dirname(bfcl_executable):
+        exec_dir = str(Path(bfcl_executable).resolve().parent)
+        env["PATH"] = f"{exec_dir}{os.pathsep}{env.get('PATH', '')}"
+    return env
 
 
 def _build_evaluate_cmd(
@@ -208,6 +230,7 @@ def run_bfcl(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
+    subprocess_env = _venv_subprocess_env(bfcl_executable)
     if not skip_generate:
         gen_cmd = _build_generate_cmd(
             model=resolved,
@@ -218,7 +241,7 @@ def run_bfcl(
             extra_args=extra_generate_args,
             bfcl_executable=bfcl_executable,
         )
-        subprocess.run(gen_cmd, cwd=str(cwd), check=True)
+        subprocess.run(gen_cmd, cwd=str(cwd), check=True, env=subprocess_env)
 
     if not skip_evaluate:
         eval_cmd = _build_evaluate_cmd(
@@ -226,7 +249,7 @@ def run_bfcl(
             test_categories=categories,
             bfcl_executable=bfcl_executable,
         )
-        subprocess.run(eval_cmd, cwd=str(cwd), check=True)
+        subprocess.run(eval_cmd, cwd=str(cwd), check=True, env=subprocess_env)
 
     score_dir = cwd / "score" / resolved
     per_category = _collect_per_category(score_dir)
