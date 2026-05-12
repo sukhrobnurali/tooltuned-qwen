@@ -32,8 +32,11 @@ from typing import Any
 # multi-turn family takes ~5-10x the compute. Each category here maps to
 # a `BFCL_v4_<name>_score.json` file under `score/MODEL/<section>/`.
 DEFAULT_TEST_CATEGORIES: list[str] = [
-    # Non-live (curated, static prompts)
-    "simple",
+    # Non-live (curated, static prompts). BFCL V4 splits `simple` by language
+    # -- we evaluate Python only since xLAM is Python-centric (Java + JS are
+    # available as `simple_java` / `simple_javascript`; bfcl also offers the
+    # `non_python` collection alias for the cross-language pair).
+    "simple_python",
     "multiple",
     "parallel",
     "parallel_multiple",
