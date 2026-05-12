@@ -110,6 +110,37 @@ def _build_generate_cmd(
     return cmd
 
 
+def _run_streaming(
+    cmd: list[str], *, cwd: Path, env: dict[str, str], label: str
+) -> None:
+    """Run `cmd` and stream its merged stdout+stderr line-by-line to our
+    own stdout. Plain `subprocess.run(check=True)` is supposed to inherit
+    parent streams, but Colab/IPython's stdout capture layer silently
+    swallows the child output -- when bfcl crashes during model load we
+    end up with a bare `CalledProcessError: exit status 1` and no clue
+    why. This wrapper makes vLLM/bfcl logs visible in real time.
+    """
+    import sys
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        text=True,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+    proc.wait()
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, cmd)
+    print(f"[{label}] done (exit 0)", file=sys.stdout, flush=True)
+
+
 def _venv_subprocess_env(bfcl_executable: str) -> dict[str, str]:
     """Build subprocess env so bfcl can find its sibling binaries on PATH.
 
@@ -241,7 +272,7 @@ def run_bfcl(
             extra_args=extra_generate_args,
             bfcl_executable=bfcl_executable,
         )
-        subprocess.run(gen_cmd, cwd=str(cwd), check=True, env=subprocess_env)
+        _run_streaming(gen_cmd, cwd=cwd, env=subprocess_env, label="bfcl generate")
 
     if not skip_evaluate:
         eval_cmd = _build_evaluate_cmd(
@@ -249,7 +280,7 @@ def run_bfcl(
             test_categories=categories,
             bfcl_executable=bfcl_executable,
         )
-        subprocess.run(eval_cmd, cwd=str(cwd), check=True, env=subprocess_env)
+        _run_streaming(eval_cmd, cwd=cwd, env=subprocess_env, label="bfcl evaluate")
 
     score_dir = cwd / "score" / resolved
     per_category = _collect_per_category(score_dir)

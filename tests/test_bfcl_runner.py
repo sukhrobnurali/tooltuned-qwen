@@ -387,18 +387,18 @@ def test_run_bfcl_invokes_generate_and_evaluate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """End-to-end orchestrator: when `skip_generate`/`skip_evaluate` are
-    False, both subprocess calls fire with the resolved model name. Mock
-    `subprocess.run` so the test stays GPU-free; verify the recorded calls
-    instead of letting BFCL actually shell out. Also asserts that a
+    False, both subprocess calls fire with the resolved model name. Patch
+    the streaming runner so the test stays GPU-free; verify the recorded
+    calls instead of letting BFCL actually shell out. Also asserts that a
     non-default `bfcl_executable` (the Colab venv path) propagates to
     every spawned command."""
     calls: list[list[str]] = []
     venv_bin = "/content/bfcl-venv/bin/bfcl"
 
-    def fake_run(cmd: list[str], **kwargs: Any) -> Any:
+    def fake_streaming(
+        cmd: list[str], *, cwd: Any, env: Any, label: str
+    ) -> None:
         calls.append(cmd)
-        # When `bfcl evaluate` "runs", fabricate the score files the parser
-        # will look for so the orchestrator's post-step parse succeeds.
         if cmd[1:2] == ["evaluate"]:
             _make_score_fixture(
                 tmp_path,
@@ -406,16 +406,9 @@ def test_run_bfcl_invokes_generate_and_evaluate(
                 cats={"non_live/simple_python": (1.0, 10, 10)},
             )
 
-        class _Result:
-            returncode = 0
-            stdout = ""
-            stderr = ""
-
-        return _Result()
-
     import tooltuned_qwen.eval.bfcl_runner as runner_mod
 
-    monkeypatch.setattr(runner_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(runner_mod, "_run_streaming", fake_streaming)
 
     out_dir = tmp_path / "out"
     results = run_bfcl(
