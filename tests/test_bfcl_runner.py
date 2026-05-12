@@ -133,6 +133,34 @@ def test_build_evaluate_cmd_basic_shape() -> None:
     assert cmd[cmd.index("--test-category") + 1] == "simple_python,multiple"
 
 
+def test_build_generate_cmd_honors_custom_executable() -> None:
+    """bfcl-eval's torch/vllm pin conflicts with our Unsloth pin set, so
+    Colab installs it into an isolated venv. The wrapper must point at
+    that venv's `bfcl` binary rather than the host PATH -- otherwise the
+    shell-out tries to invoke a binary that doesn't exist in the main env."""
+    cmd = _build_generate_cmd(
+        model="m",
+        test_categories=["simple_python"],
+        backend="vllm",
+        local_model_path=None,
+        lora_modules=None,
+        extra_args=None,
+        bfcl_executable="/content/bfcl-venv/bin/bfcl",
+    )
+    assert cmd[0] == "/content/bfcl-venv/bin/bfcl"
+    assert cmd[1] == "generate"
+
+
+def test_build_evaluate_cmd_honors_custom_executable() -> None:
+    cmd = _build_evaluate_cmd(
+        model="m",
+        test_categories=["simple_python"],
+        bfcl_executable="/content/bfcl-venv/bin/bfcl",
+    )
+    assert cmd[0] == "/content/bfcl-venv/bin/bfcl"
+    assert cmd[1] == "evaluate"
+
+
 def test_parse_score_summary_reads_first_jsonl_line(tmp_path: Path) -> None:
     """BFCL evaluators emit JSONL with the summary `{accuracy, correct_count,
     total_count}` on line 1 and per-item miss diagnostics on subsequent lines.
@@ -311,7 +339,9 @@ def _assert_subprocess_recorded(
 ) -> None:
     matched: list[list[str]] = []
     for cmd in calls:
-        if cmd[:2] == ["bfcl", subcommand]:
+        # `cmd[0]` is the executable path (e.g. `/content/bfcl-venv/bin/bfcl`),
+        # which varies by test; match the subcommand by position only.
+        if len(cmd) >= 2 and cmd[1] == subcommand:
             matched.append(cmd)
     assert matched, f"no bfcl {subcommand} call recorded for {model}"
     assert any(model in cmd for cmd in matched), (
@@ -325,14 +355,17 @@ def test_run_bfcl_invokes_generate_and_evaluate(
     """End-to-end orchestrator: when `skip_generate`/`skip_evaluate` are
     False, both subprocess calls fire with the resolved model name. Mock
     `subprocess.run` so the test stays GPU-free; verify the recorded calls
-    instead of letting BFCL actually shell out."""
+    instead of letting BFCL actually shell out. Also asserts that a
+    non-default `bfcl_executable` (the Colab venv path) propagates to
+    every spawned command."""
     calls: list[list[str]] = []
+    venv_bin = "/content/bfcl-venv/bin/bfcl"
 
     def fake_run(cmd: list[str], **kwargs: Any) -> Any:
         calls.append(cmd)
         # When `bfcl evaluate` "runs", fabricate the score files the parser
         # will look for so the orchestrator's post-step parse succeeds.
-        if cmd[:2] == ["bfcl", "evaluate"]:
+        if cmd[1:2] == ["evaluate"]:
             _make_score_fixture(
                 tmp_path,
                 "tooltuned-qwen-3.5-4b-FC",
@@ -359,8 +392,13 @@ def test_run_bfcl_invokes_generate_and_evaluate(
         test_categories=["simple_python"],
         local_model_path="/content/qwen3.5-4b-base",
         lora_modules={"tooltuned": "/content/adapter"},
+        bfcl_executable=venv_bin,
     )
 
     _assert_subprocess_recorded(calls, "generate", "tooltuned-qwen-3.5-4b-FC")
     _assert_subprocess_recorded(calls, "evaluate", "tooltuned-qwen-3.5-4b-FC")
     assert results["overall"]["accuracy"] == 1.0
+    # Every recorded call must start with the venv binary, not the bare
+    # `bfcl` -- a fallback to the host PATH would re-trigger the dep
+    # conflict that motivated the isolated venv in the first place.
+    assert all(cmd[0] == venv_bin for cmd in calls), calls

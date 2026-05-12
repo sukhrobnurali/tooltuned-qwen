@@ -75,11 +75,18 @@ def _build_generate_cmd(
     local_model_path: str | None,
     lora_modules: dict[str, str] | None,
     extra_args: list[str] | None,
+    bfcl_executable: str = "bfcl",
 ) -> list[str]:
     """Construct `bfcl generate ...` argv. BFCL's CLI takes a single
-    comma-joined test-category arg, not repeated flags."""
+    comma-joined test-category arg, not repeated flags.
+
+    `bfcl_executable` defaults to the bare `bfcl` (assumes PATH-resolvable),
+    but on Colab we install bfcl-eval into an isolated venv to avoid a
+    torch/vllm pin conflict with the training stack -- so the notebook
+    passes the venv's `/content/bfcl-venv/bin/bfcl` here.
+    """
     cmd: list[str] = [
-        "bfcl",
+        bfcl_executable,
         "generate",
         "--model",
         model,
@@ -99,9 +106,14 @@ def _build_generate_cmd(
     return cmd
 
 
-def _build_evaluate_cmd(*, model: str, test_categories: list[str]) -> list[str]:
+def _build_evaluate_cmd(
+    *,
+    model: str,
+    test_categories: list[str],
+    bfcl_executable: str = "bfcl",
+) -> list[str]:
     return [
-        "bfcl",
+        bfcl_executable,
         "evaluate",
         "--model",
         model,
@@ -170,6 +182,7 @@ def run_bfcl(
     extra_generate_args: list[str] | None = None,
     skip_generate: bool = False,
     skip_evaluate: bool = False,
+    bfcl_executable: str = "bfcl",
 ) -> dict[str, Any]:
     """Run `bfcl generate` + `bfcl evaluate` and collect a flat results dict.
 
@@ -200,11 +213,16 @@ def run_bfcl(
             local_model_path=local_model_path,
             lora_modules=lora_modules,
             extra_args=extra_generate_args,
+            bfcl_executable=bfcl_executable,
         )
         subprocess.run(gen_cmd, cwd=str(cwd), check=True)
 
     if not skip_evaluate:
-        eval_cmd = _build_evaluate_cmd(model=resolved, test_categories=categories)
+        eval_cmd = _build_evaluate_cmd(
+            model=resolved,
+            test_categories=categories,
+            bfcl_executable=bfcl_executable,
+        )
         subprocess.run(eval_cmd, cwd=str(cwd), check=True)
 
     score_dir = cwd / "score" / resolved
