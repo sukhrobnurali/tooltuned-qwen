@@ -51,14 +51,18 @@ print(f"n_per_cat={N_PER_CAT}, total items per arm ≈ {N_PER_CAT * 11}")""",
     ),
     (
         "intree-eval-base",
-        """# Evaluate the base Qwen 3.5 4B. ~15-25 min on A100 at N_PER_CAT=50.
-# `run_bfcl_full` defers Unsloth+dynamo setup into the function body, so
-# this cell is the first place the GPU sees real load.
+        """# Evaluate the base Qwen 3.5 4B. ~80 min on A100 at N_PER_CAT=50 with
+# the 512 token cap (down from ~2h at the 768 default). Phase 2 found 256
+# truncated mid-reasoning; 768 was a conservative ceiling. 512 splits the
+# difference -- most BFCL completions land at 200-400 tokens once the
+# model commits to a call, and the rare longer ones produce missed parses
+# rather than wrong answers (they still score the same as a hard miss).
 from tooltuned_qwen.eval.bfcl_holdout import run_bfcl_full
 base_results = run_bfcl_full(
     "Qwen/Qwen3.5-4B",
     model_label="Qwen/Qwen3.5-4B",
     n_per_cat=N_PER_CAT,
+    max_new_tokens=512,
     out_path="results/bfcl_intree/base/results.json",
 )
 print("base overall:", base_results["overall"])
@@ -72,14 +76,35 @@ torch.cuda.empty_cache()""",
         "intree-eval-tuned",
         """# Evaluate the fine-tuned adapter (Phase 1.3 finding #5: pass the adapter
 # repo to `from_pretrained` directly, never via `load_adapter`).
+# max_new_tokens=512 matches the base arm so the two are comparable.
 from tooltuned_qwen.eval.bfcl_holdout import run_bfcl_full
 tuned_results = run_bfcl_full(
     "sukhrobnurali/tooltuned-qwen-3.5-4b",
     model_label="tooltuned-qwen-3.5-4b",
     n_per_cat=N_PER_CAT,
+    max_new_tokens=512,
     out_path="results/bfcl_intree/tuned/results.json",
 )
 print("tuned overall:", tuned_results["overall"])
+# Save tuned_results to disk IMMEDIATELY (S9 lesson: per-category data
+# evaporates when Colab disconnects; only the disk file + the printed
+# overall survived). Also mirror to the private HF smoke repo so a
+# runtime crash before the local download still preserves diagnostics.
+import json, pathlib
+pathlib.Path("results/bfcl_intree/tuned/results_full.json").write_text(
+    json.dumps(tuned_results, indent=2), encoding="utf-8"
+)
+try:
+    from huggingface_hub import HfApi
+    HfApi(token=os.environ["HF_TOKEN"]).upload_file(
+        path_or_fileobj="results/bfcl_intree/tuned/results_full.json",
+        path_in_repo="results/bfcl_intree/tuned/results_full.json",
+        repo_id="sukhrobnurali/tooltuned-qwen-3.5-4b-smoke",
+        repo_type="model",
+    )
+    print("saved to disk + mirrored to smoke repo")
+except Exception as e:
+    print(f"local save OK; smoke-repo backup failed ({e!r}) -- download from sidebar now")
 import gc, torch
 gc.collect()
 torch.cuda.empty_cache()""",
