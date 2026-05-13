@@ -1,0 +1,20 @@
+{
+ "evaluated_at": "2026-05-13",
+ "mode": "intree",
+ "model": "tooltuned-qwen-3.5-4b",
+ "n_total": 458,
+ "note": "PARTIAL RECORD. Only the overall aggregate survived -- the Colab runtime disconnected before per_category could be saved, and per-item completions were not persisted by the notebook. Re-eval needed to recover per-category breakdown for the eval-debugging ADR (0006). Last printed running_acc reached 0.793 at item 458/458; the final overall printed by cell 4 confirms 363/458.",
+ "overall": {
+  "accuracy": 0.7925764192139738,
+  "correct": 363,
+  "total": 458
+ },
+ "per_category": {},
+ "gate": {
+  "delta_pp": -8.08,
+  "base_overall": 0.8733624454148472,
+  "tuned_overall": 0.7925764192139738,
+  "passed": false,
+  "threshold_pp": 3.0
+ }
+}
