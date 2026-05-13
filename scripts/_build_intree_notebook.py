@@ -1,0 +1,177 @@
+"""One-shot generator for notebooks/colab_bfcl_intree.ipynb.
+
+The repo's other notebooks are real .ipynb JSON (cells: [{cell_type, id,
+source: [lines]}], metadata, nbformat). Kept the cell sources here as
+Python triple-quoted strings so the escaping for the JSON write is
+generated reliably -- a previous hand-written attempt produced the
+pseudo-XML form the Read tool *displays*, not the JSON Colab parses.
+
+Run once with `uv run python scripts/_build_intree_notebook.py`. Idempotent
+-- overwrites the notebook in place.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+CELLS: list[tuple[str, str]] = [
+    (
+        "intree-install",
+        """# In-tree BFCL evaluator (Phase 4 redo). Skips the canonical bfcl-eval CLI
+# entirely -- that path is deferred pending vllm/transformers/Qwen 3.5/NCCL
+# stabilisation on Colab (see project memory + ADR 0005). This notebook
+# runs through Unsloth in the same `[colab]` env we used for Phase 3
+# training, evaluates both base and adapter on 11 BFCL V3 single-turn
+# categories with an in-tree AST-match + decision-to-call scorer, and
+# pushes the regenerated model card + chart to HF when the gate passes.
+!git clone https://github.com/sukhrobnurali/tooltuned-qwen.git
+%cd tooltuned-qwen
+!pip install -e ".[colab]" --quiet
+!pip uninstall -y torchcodec --quiet""",
+    ),
+    (
+        "intree-secrets",
+        """import sys, os
+# Phase 1.3 finding #9: editable install + kernel restart can drop our
+# package from sys.path -- belt and braces.
+sys.path.insert(0, "/content/tooltuned-qwen/src")
+# Colab secrets land in `userdata`, not os.environ (Phase 2 finding #10).
+from google.colab import userdata
+for key in ("HF_TOKEN",):
+    val = userdata.get(key)
+    assert val, f"Set {key} in Colab secrets and toggle Notebook access on"
+    os.environ[key] = val
+# Per-category truncation. 50 keeps the run inside the Phase 4 budget
+# (~1.5 h on A100 per arm). Bump to None for a full pass when budget allows;
+# the directionality of the delta is stable from N=50 already (Phase 2's
+# 50-item holdout produced delta consistent with later 1k-row runs).
+N_PER_CAT = 50
+print(f"n_per_cat={N_PER_CAT}, total items per arm ≈ {N_PER_CAT * 11}")""",
+    ),
+    (
+        "intree-eval-base",
+        """# Evaluate the base Qwen 3.5 4B. ~15-25 min on A100 at N_PER_CAT=50.
+# `run_bfcl_full` defers Unsloth+dynamo setup into the function body, so
+# this cell is the first place the GPU sees real load.
+from tooltuned_qwen.eval.bfcl_holdout import run_bfcl_full
+base_results = run_bfcl_full(
+    "Qwen/Qwen3.5-4B",
+    model_label="Qwen/Qwen3.5-4B",
+    n_per_cat=N_PER_CAT,
+    out_path="results/bfcl_intree/base/results.json",
+)
+print("base overall:", base_results["overall"])
+# Drop GPU allocations before loading the tuned arm. Without this the
+# second `from_pretrained` can OOM on lower-VRAM runtimes (L4 has 24 GB).
+import gc, torch
+gc.collect()
+torch.cuda.empty_cache()""",
+    ),
+    (
+        "intree-eval-tuned",
+        """# Evaluate the fine-tuned adapter (Phase 1.3 finding #5: pass the adapter
+# repo to `from_pretrained` directly, never via `load_adapter`).
+from tooltuned_qwen.eval.bfcl_holdout import run_bfcl_full
+tuned_results = run_bfcl_full(
+    "sukhrobnurali/tooltuned-qwen-3.5-4b",
+    model_label="tooltuned-qwen-3.5-4b",
+    n_per_cat=N_PER_CAT,
+    out_path="results/bfcl_intree/tuned/results.json",
+)
+print("tuned overall:", tuned_results["overall"])
+import gc, torch
+gc.collect()
+torch.cuda.empty_cache()""",
+    ),
+    (
+        "intree-compare-push",
+        """# Build the comparison + chart, gate-check on +3pp, regenerate + push
+# the model card to HF if the gate passes. Gate failure halts here --
+# Branch B in the project plan: write 0006-eval-debugging.md instead
+# of pushing a sub-gate artifact.
+from tooltuned_qwen.eval.compare import build_comparison
+from tooltuned_qwen.hub.model_card import generate_card
+from huggingface_hub import HfApi
+
+results = build_comparison(
+    base_results=base_results,
+    tuned_results=tuned_results,
+    out_dir="results/bfcl_intree/comparison",
+    base_model_name="Qwen/Qwen3.5-4B",
+    title="BFCL V3 single-turn -- base vs. fine-tuned Qwen 3.5 4B (in-tree eval)",
+)
+print(
+    f"delta: {results['delta']*100:+.2f}pp  "
+    f"(base {results['overall_base']*100:.1f}% -> tuned {results['overall_tuned']*100:.1f}%)"
+)
+
+if results["delta"] < 0.03:
+    print(
+        "GATE FAILED: delta below 3pp threshold. "
+        "Write docs/decisions/0006-eval-debugging.md before pushing."
+    )
+else:
+    card_path = generate_card(
+        bfcl_results=results,
+        training_config_path="configs/default.yaml",
+        out_path="MODEL_CARD.md",
+    )
+    api = HfApi(token=os.environ["HF_TOKEN"])
+    api.upload_file(
+        path_or_fileobj=card_path,
+        path_in_repo="README.md",
+        repo_id="sukhrobnurali/tooltuned-qwen-3.5-4b",
+        repo_type="model",
+    )
+    api.upload_file(
+        path_or_fileobj="results/bfcl_intree/comparison/bfcl_comparison.png",
+        path_in_repo="bfcl_comparison.png",
+        repo_id="sukhrobnurali/tooltuned-qwen-3.5-4b",
+        repo_type="model",
+    )
+    print("model card + chart pushed to HF")""",
+    ),
+]
+
+
+def _source_lines(body: str) -> list[str]:
+    """Split a multi-line cell body into the `source` list form .ipynb wants:
+    every non-final line keeps its trailing `\\n`; the final line has no
+    trailing newline. Matches the shape colab_main.ipynb uses."""
+    lines = body.split("\n")
+    return [line + "\n" for line in lines[:-1]] + [lines[-1]]
+
+
+def build() -> dict:
+    return {
+        "cells": [
+            {
+                "cell_type": "code",
+                "execution_count": None,
+                "id": cell_id,
+                "metadata": {},
+                "outputs": [],
+                "source": _source_lines(body),
+            }
+            for cell_id, body in CELLS
+        ],
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3",
+            },
+            "language_info": {"name": "python"},
+            "accelerator": "GPU",
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+
+
+if __name__ == "__main__":
+    out = Path("notebooks/colab_bfcl_intree.ipynb")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(build(), indent=1) + "\n", encoding="utf-8")
+    print(f"wrote {out} ({out.stat().st_size} bytes)")
