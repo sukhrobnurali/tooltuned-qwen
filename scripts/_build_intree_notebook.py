@@ -86,23 +86,21 @@ tuned_results = run_bfcl_full(
     out_path="results/bfcl_intree/tuned/results.json",
 )
 print("tuned overall:", tuned_results["overall"])
-# Save tuned_results to disk IMMEDIATELY (S9 lesson: per-category data
-# evaporates when Colab disconnects; only the disk file + the printed
-# overall survived). Also mirror to the private HF smoke repo so a
-# runtime crash before the local download still preserves diagnostics.
-import json, pathlib
-pathlib.Path("results/bfcl_intree/tuned/results_full.json").write_text(
-    json.dumps(tuned_results, indent=2), encoding="utf-8"
-)
+# S9 lesson: per-category + per-item data evaporated when Colab disconnected
+# before the local download. run_bfcl_full(out_path=...) already wrote
+# results/bfcl_intree/tuned/results.json above (per_category + per_item_summary
+# with {id, category, correct}). Mirror that file -- NOT a re-dump of
+# tuned_results, which is only the aggregate shape from shape_results() and
+# lacks per_item_summary -- to the private HF smoke repo as a network backup.
 try:
     from huggingface_hub import HfApi
     HfApi(token=os.environ["HF_TOKEN"]).upload_file(
-        path_or_fileobj="results/bfcl_intree/tuned/results_full.json",
-        path_in_repo="results/bfcl_intree/tuned/results_full.json",
+        path_or_fileobj="results/bfcl_intree/tuned/results.json",
+        path_in_repo="results/bfcl_intree/tuned/results.json",
         repo_id="sukhrobnurali/tooltuned-qwen-3.5-4b-smoke",
         repo_type="model",
     )
-    print("saved to disk + mirrored to smoke repo")
+    print("local results.json present; mirrored to smoke repo")
 except Exception as e:
     print(f"local save OK; smoke-repo backup failed ({e!r}) -- download from sidebar now")
 import gc, torch
