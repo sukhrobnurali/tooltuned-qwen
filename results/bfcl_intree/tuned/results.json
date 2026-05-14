@@ -3,17 +3,30 @@
  "mode": "intree",
  "model": "tooltuned-qwen-3.5-4b",
  "n_total": 458,
- "note": "PARTIAL RECORD. Only the overall aggregate survived -- the Colab runtime disconnected before per_category could be saved, and per-item completions were not persisted by the notebook. Re-eval needed to recover per-category breakdown for the eval-debugging ADR (0006). Last printed running_acc reached 0.793 at item 458/458; the final overall printed by cell 4 confirms 363/458.",
+ "note": "S10 re-eval. Aggregates recovered from the HF smoke-repo backup (sukhrobnurali/tooltuned-qwen-3.5-4b-smoke :: results/bfcl_intree/tuned/results_full.json) -- the local Colab disk copy was lost when the runtime disconnected post-cell-5. Tuned at max_new_tokens=512; base reference comes from S8 cache at max_new_tokens=768 (overall delta between the two base runs was 0.6pp, within sampling noise on 50-item categories -- see ADR 0006 for the per-category contrast). per_item_summary lost because the pre-fix cell dumped tuned_results (shape_results output, aggregate-only) rather than the run_bfcl_full(out_path=...) richer file. Commit df01925 fixed the HF backup pointer for future runs; this record is the S10 snapshot used for the eval-debugging ADR.",
  "overall": {
-  "accuracy": 0.7925764192139738,
-  "correct": 363,
+  "accuracy": 0.7903930131004366,
+  "correct": 362,
   "total": 458
  },
- "per_category": {},
+ "per_category": {
+  "irrelevance": {"accuracy": 0.42, "correct": 21, "total": 50, "section": "non_live"},
+  "live_irrelevance": {"accuracy": 0.78, "correct": 39, "total": 50, "section": "live"},
+  "live_multiple": {"accuracy": 0.78, "correct": 39, "total": 50, "section": "live"},
+  "live_parallel": {"accuracy": 0.6875, "correct": 11, "total": 16, "section": "live"},
+  "live_parallel_multiple": {"accuracy": 0.9166666666666666, "correct": 22, "total": 24, "section": "live"},
+  "live_relevance": {"accuracy": 0.7777777777777778, "correct": 14, "total": 18, "section": "live"},
+  "live_simple": {"accuracy": 0.74, "correct": 37, "total": 50, "section": "live"},
+  "multiple": {"accuracy": 0.9, "correct": 45, "total": 50, "section": "non_live"},
+  "parallel": {"accuracy": 0.88, "correct": 44, "total": 50, "section": "non_live"},
+  "parallel_multiple": {"accuracy": 0.92, "correct": 46, "total": 50, "section": "non_live"},
+  "simple": {"accuracy": 0.88, "correct": 44, "total": 50, "section": "non_live"}
+ },
  "gate": {
-  "delta_pp": -8.08,
-  "base_overall": 0.8733624454148472,
-  "tuned_overall": 0.7925764192139738,
+  "delta_pp": -7.64,
+  "base_overall": 0.8668122270742358,
+  "base_run": "S10 fresh re-eval at max_new_tokens=512 (overall printed by cell 3; per-category for the S10 base run lost to Colab disconnect, see ADR 0006 for the contrast against the S8-cached base per-category at 768 tokens)",
+  "tuned_overall": 0.7903930131004366,
   "passed": false,
   "threshold_pp": 3.0
  }
