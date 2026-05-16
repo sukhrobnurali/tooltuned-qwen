@@ -1,0 +1,65 @@
+{
+  "base_model": "Qwen/Qwen3.5-4B",
+  "delta": -0.08296943231441056,
+  "evaluated_at": "2026-05-13",
+  "n_total": 458,
+  "overall_base": 0.8733624454148472,
+  "overall_tuned": 0.7903930131004366,
+  "rows": [
+    {
+      "base": 0.8,
+      "category": "irrelevance",
+      "tuned": 0.42
+    },
+    {
+      "base": 0.98,
+      "category": "live_irrelevance",
+      "tuned": 0.78
+    },
+    {
+      "base": 0.78,
+      "category": "live_multiple",
+      "tuned": 0.78
+    },
+    {
+      "base": 0.8125,
+      "category": "live_parallel",
+      "tuned": 0.6875
+    },
+    {
+      "base": 0.9583333333333334,
+      "category": "live_parallel_multiple",
+      "tuned": 0.9166666666666666
+    },
+    {
+      "base": 0.6666666666666666,
+      "category": "live_relevance",
+      "tuned": 0.7777777777777778
+    },
+    {
+      "base": 0.8,
+      "category": "live_simple",
+      "tuned": 0.74
+    },
+    {
+      "base": 0.92,
+      "category": "multiple",
+      "tuned": 0.9
+    },
+    {
+      "base": 0.88,
+      "category": "parallel",
+      "tuned": 0.88
+    },
+    {
+      "base": 0.98,
+      "category": "parallel_multiple",
+      "tuned": 0.92
+    },
+    {
+      "base": 0.9,
+      "category": "simple",
+      "tuned": 0.88
+    }
+  ]
+}
