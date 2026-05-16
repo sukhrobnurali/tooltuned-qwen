@@ -140,6 +140,48 @@ def test_card_negative_delta_renders_with_minus(tmp_path: Path) -> None:
     assert "+2.3pp" not in body
 
 
+def test_card_renders_gate_disclosure_when_below_gate(tmp_path: Path) -> None:
+    """ADR 0007: v1.0 publishes below the +3pp gate. The card must surface a
+    callout linking to the diagnosis ADR so the reader sees the regression
+    explicitly, not just the numbers in the per-category table."""
+    out = tmp_path / "MODEL_CARD.md"
+    generate_card(
+        bfcl_results={
+            "overall_base": 0.8734,
+            "overall_tuned": 0.7904,
+            "delta": -0.083,
+            "n_total": 458,
+            "evaluated_at": "2026-05-13",
+            "base_model": "Qwen/Qwen3.5-4B",
+        },
+        training_config_path=str(DEFAULT_YAML),
+        out_path=str(out),
+    )
+    body = out.read_text(encoding="utf-8")
+    assert "Gate disclosure (v1.0)" in body
+    assert "0006-eval-debugging" in body
+    assert "-8.30pp" in body
+
+
+def test_card_omits_gate_disclosure_when_above_gate(tmp_path: Path) -> None:
+    """The disclosure callout is a v1.0 artifact; a future passing run must
+    render the card cleanly without the regression block hanging around."""
+    out = tmp_path / "MODEL_CARD.md"
+    generate_card(
+        bfcl_results={
+            "overall_base": 0.503,
+            "overall_tuned": 0.547,
+            "delta": 0.04,
+            "n_total": 500,
+            "evaluated_at": "2026-05-15",
+        },
+        training_config_path=str(DEFAULT_YAML),
+        out_path=str(out),
+    )
+    body = out.read_text(encoding="utf-8")
+    assert "Gate disclosure" not in body
+
+
 @pytest.mark.parametrize("missing_key", ["overall_base", "overall_tuned", "delta"])
 def test_card_falls_back_to_tbd_on_partial_results(
     tmp_path: Path, missing_key: str

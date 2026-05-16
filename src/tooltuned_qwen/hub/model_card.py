@@ -25,6 +25,12 @@ from ..training.config import TrainingConfig, load_config
 #                                          # each row: {"category", "base", "tuned"}
 # }
 
+# Brief 4.4 BFCL gate -- v1.0 published below this with honest disclosure per
+# ADR 0007. When delta is below the gate, the card surfaces a callout linking
+# to the diagnosis ADR instead of letting the reader infer success from the
+# table alone.
+BFCL_GATE_DELTA = 0.03
+
 
 def generate_card(
     *,
@@ -133,6 +139,31 @@ def _headline_number(bfcl_results: dict[str, Any] | None) -> str:
     return f"{tuned * 100:.1f}% (base {base * 100:.1f}%, {sign}{delta * 100:.1f}pp)"
 
 
+def _format_gate_callout(delta: Any) -> str:
+    """Markdown blockquote disclosing that the adapter is below the BFCL gate.
+
+    Empty string when delta is None or >= the gate threshold; the card then
+    renders cleanly for runs that met the bar.
+    """
+    if not isinstance(delta, (int, float)):
+        return ""
+    if delta >= BFCL_GATE_DELTA:
+        return ""
+    sign = "+" if delta >= 0 else ""
+    adr_url = (
+        "https://github.com/sukhrobnurali/tooltuned-qwen"
+        "/blob/main/docs/decisions/0006-eval-debugging.md"
+    )
+    return (
+        f"> **Gate disclosure (v1.0):** This adapter is published below the +3pp "
+        f"BFCL gate defined in the project brief (delta {sign}{delta * 100:.2f}pp on "
+        "the in-tree V3 evaluator). The regression is concentrated in "
+        f"`irrelevance` / `live_irrelevance` categories -- see [ADR 0006]({adr_url}) "
+        "for the locked diagnosis and the Phase 3.5 remediation spec (deferred "
+        "for v1.0).\n"
+    )
+
+
 def _bfcl_section(bfcl_results: dict[str, Any] | None) -> str:
     if bfcl_results is None:
         return (
@@ -142,6 +173,9 @@ def _bfcl_section(bfcl_results: dict[str, Any] | None) -> str:
         )
 
     lines: list[str] = ["## BFCL V4 results\n"]
+    callout = _format_gate_callout(bfcl_results.get("delta"))
+    if callout:
+        lines.append(callout)
     base = bfcl_results.get("overall_base")
     tuned = bfcl_results.get("overall_tuned")
     delta = bfcl_results.get("delta")
