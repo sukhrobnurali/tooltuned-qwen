@@ -38,6 +38,9 @@ results/*/raw/
 *.pt
 *.ckpt
 
+# generated model card (lives on HF, not in the repo)
+MODEL_CARD.md
+
 # IDE
 .vscode/
 .idea/

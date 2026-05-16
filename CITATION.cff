@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you reference this work, please cite it as below."
+title: "tooltuned-qwen-3.5-4b: a tool-calling LoRA for Qwen 3.5 4B"
+authors:
+  - family-names: Nurali
+    given-names: Sukhrob
+    email: sukhrobnurali@gmail.com
+type: software
+version: 1.0.0
+date-released: 2026-05-14
+license: Apache-2.0
+repository-code: "https://github.com/sukhrobnurali/tooltuned-qwen"
+url: "https://huggingface.co/sukhrobnurali/tooltuned-qwen-3.5-4b"
+keywords:
+  - function-calling
+  - tool-use
+  - LoRA
+  - Qwen
+  - BFCL
+  - fine-tuning
+abstract: >-
+  A bf16 LoRA fine-tune of Qwen/Qwen3.5-4B for tool / function calling,
+  trained on Salesforce/xlam-function-calling-60k via Unsloth + TRL.
+  Published as v1.0 below the project's +3pp BFCL gate (delta -8.3pp on
+  the in-tree V3 single-turn evaluator) with full per-category disclosure
+  of the must_not_call regression.
